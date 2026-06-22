@@ -131,6 +131,11 @@ type Model struct {
 	help         HelpModel
 	sessionStats SessionStatsModel
 
+	// Mouse double-click tracking for the sidebar: a second left-click on the
+	// same node within doubleClickWindow opens it (like Enter).
+	lastClickNode int
+	lastClickTime time.Time
+
 	showYank    bool
 	showHelp    bool
 	showConfirm bool
@@ -467,7 +472,7 @@ func Run(cfg config.Config, database *db.DB) error {
 		ApplyStickyMode()
 	}
 	m := New(cfg, database)
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }

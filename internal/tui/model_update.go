@@ -32,6 +32,8 @@ func (m Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+	case tea.MouseMsg:
+		return m.handleMouseMsg(msg)
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -308,6 +310,84 @@ func (m Model) handleProcDataMsg(msg procDataMsg) (Model, tea.Cmd) {
 	m.updateDetailFromSelection()
 	// Self-schedule next poll in 2s for the selected window.
 	return m, m.scheduleDelayedProcFetch()
+}
+
+// doubleClickWindow is the max gap between two left-clicks on the same sidebar
+// node for the second to count as a double-click (which opens the session).
+const doubleClickWindow = 400 * time.Millisecond
+
+// handleMouseMsg routes mouse events. Left-click in the sidebar selects the
+// clicked session; a second click on the same row within doubleClickWindow opens
+// it (like Enter). The scroll wheel moves the sidebar selection up/down.
+func (m Model) handleMouseMsg(msg tea.MouseMsg) (Model, tea.Cmd) {
+	// Keyboard-driven inputs own the screen; their geometry differs from the
+	// normal layout, so ignore mouse while they are active.
+	if m.searchInput.IsInsert() || m.itemInput.IsActive() {
+		return m, nil
+	}
+	dims := m.buildLayoutDims()
+	inSidebar := msg.X >= 0 && msg.X < dims.sidebarW && msg.Y >= searchBoxH
+	visibleRows := m.height - statusBarH - borderOverhead - searchBoxH
+	if visibleRows < 1 {
+		visibleRows = 1
+	}
+
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		if inSidebar {
+			return m.moveSidebarCursor(-1, visibleRows)
+		}
+		return m, nil
+	case tea.MouseButtonWheelDown:
+		if inSidebar {
+			return m.moveSidebarCursor(1, visibleRows)
+		}
+		return m, nil
+	}
+
+	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft || !inSidebar {
+		return m, nil
+	}
+
+	// Content row within the sidebar box: subtract the search box above and the
+	// sidebar's own top border.
+	contentRow := msg.Y - searchBoxH - 1
+	node := m.sidebar.NodeAtRow(dims.sidebarW, dims.contentH-searchBoxH, contentRow)
+	if node < 0 {
+		return m, nil
+	}
+
+	m.focus = panelSidebar
+	m.sidebar.SetCursorIndex(node, visibleRows)
+	if n := m.sidebar.Selected(); n != nil {
+		m.procList.SetSessionData(m.panes, n.Session, m.procs, m.cwdMap, m.gitInfo, m.cfg)
+	}
+	m.updateDetailFromSelection()
+
+	now := time.Now()
+	if node == m.lastClickNode && now.Sub(m.lastClickTime) < doubleClickWindow {
+		m.lastClickTime = time.Time{} // reset so a third click is not a double
+		return m.openSidebarSelected()
+	}
+	m.lastClickNode = node
+	m.lastClickTime = now
+	return m, nil
+}
+
+// moveSidebarCursor nudges the sidebar selection by delta rows (negative = up)
+// and rebuilds the dependent proclist/detail, mirroring j/k navigation.
+func (m Model) moveSidebarCursor(delta, visibleRows int) (Model, tea.Cmd) {
+	if delta < 0 {
+		m.sidebar.MoveUp(visibleRows)
+	} else {
+		m.sidebar.MoveDown(visibleRows)
+	}
+	m.focus = panelSidebar
+	if n := m.sidebar.Selected(); n != nil {
+		m.procList.SetSessionData(m.panes, n.Session, m.procs, m.cwdMap, m.gitInfo, m.cfg)
+	}
+	m.updateDetailFromSelection()
+	return m, nil
 }
 
 func (m Model) handleStatesMsg(msg statesMsg) (Model, tea.Cmd) {
