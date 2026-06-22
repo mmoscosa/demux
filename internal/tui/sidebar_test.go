@@ -1228,7 +1228,7 @@ func TestBuildSidebarLines_CardMode_EmitsSeparatorsBetween(t *testing.T) {
 	}
 	centered := func(t string) string { return t }
 	// Visible rows: 3 + 3 + 2 = 8 (alpha card, beta card, gamma card with no trailing separator).
-	lines := s.buildSidebarLines(0, 8, false, false, false, 40, centered)
+	lines, _ := s.buildSidebarLines(0, 8, false, false, false, 40, centered)
 	if len(lines) != 8 {
 		t.Fatalf("expected 8 lines, got %d: %v", len(lines), lines)
 	}
@@ -1264,7 +1264,7 @@ func TestBuildSidebarLines_CardMode_NoSeparatorBeforeScrollHint(t *testing.T) {
 	// Render only first 2 cards with hasBelow=true. contentRows budget = 6 (2 cards × 3 rows each).
 	// Expected lines (with hasBelow appending the ▼ hint): alpha-r1, alpha-r2, blank, beta-r1, beta-r2, then ▼.
 	// No blank between beta-r2 and ▼.
-	lines := s.buildSidebarLines(0, 6, false, true, false, 40, centered)
+	lines, _ := s.buildSidebarLines(0, 6, false, true, false, 40, centered)
 	if len(lines) != 6 {
 		t.Fatalf("expected 6 lines, got %d: %v", len(lines), lines)
 	}
@@ -1294,7 +1294,7 @@ func TestBuildSidebarLines_CardMode_NoSeparatorWhenDisabled(t *testing.T) {
 	}
 	centered := func(t string) string { return t }
 	// With separators off, each card consumes exactly 2 rows: 3 cards × 2 = 6.
-	lines := s.buildSidebarLines(0, 6, false, false, false, 40, centered)
+	lines, _ := s.buildSidebarLines(0, 6, false, false, false, 40, centered)
 	if len(lines) != 6 {
 		t.Fatalf("expected 6 lines, got %d: %v", len(lines), lines)
 	}
@@ -1319,7 +1319,7 @@ func TestBuildSidebarLines_CardMode_RuleSeparator(t *testing.T) {
 	}
 	centered := func(t string) string { return t }
 	// 2 cards: 3 + 2 = 5 rows.
-	lines := s.buildSidebarLines(0, 5, false, false, false, 40, centered)
+	lines, _ := s.buildSidebarLines(0, 5, false, false, false, 40, centered)
 	if len(lines) != 5 {
 		t.Fatalf("expected 5 lines, got %d", len(lines))
 	}

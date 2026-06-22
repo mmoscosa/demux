@@ -576,10 +576,16 @@ func (s SidebarModel) emptyHintText() string {
 // buildSidebarLines builds the list of rendered node lines for the sidebar
 // content area. Honors per-node height (card mode emits a blank separator
 // after each session except the last visible one).
-func (s SidebarModel) buildSidebarLines(offset, contentRows int, hasAbove, hasBelow, focused bool, width int, centeredHint func(string) string) []string {
+// buildSidebarLines returns the rendered content lines plus a parallel slice
+// mapping each line to the node index it belongs to (-1 for scroll hints and
+// card separators). The map is the source of truth for click hit-testing, so it
+// must stay in lockstep with the rendered lines.
+func (s SidebarModel) buildSidebarLines(offset, contentRows int, hasAbove, hasBelow, focused bool, width int, centeredHint func(string) string) ([]string, []int) {
 	var lines []string
+	var nodeIdx []int
 	if hasAbove {
 		lines = append(lines, centeredHint(scrollHintAbove))
+		nodeIdx = append(nodeIdx, -1)
 	}
 	end := offset + contentRows
 	if end > len(s.nodes) {
@@ -595,7 +601,11 @@ func (s SidebarModel) buildSidebarLines(offset, contentRows int, hasAbove, hasBe
 			break
 		}
 		rendered := s.renderNode(s.nodes[i], i == s.cursor, focused, width)
-		lines = append(lines, strings.Split(rendered, "\n")...)
+		renderedLines := strings.Split(rendered, "\n")
+		lines = append(lines, renderedLines...)
+		for range renderedLines {
+			nodeIdx = append(nodeIdx, i)
+		}
 		rowsLeft -= h
 		if s.cardView() && sep != "" && !isLastInList {
 			// Only emit the separator if the next card will actually be rendered.
@@ -607,13 +617,47 @@ func (s SidebarModel) buildSidebarLines(offset, contentRows int, hasAbove, hasBe
 			nextH := s.nodeHeight(i+1, (i+1) == len(s.nodes)-1)
 			if nextH <= rowsLeft {
 				lines = append(lines, sep)
+				nodeIdx = append(nodeIdx, -1)
 			}
 		}
 	}
 	if hasBelow {
 		lines = append(lines, centeredHint(scrollHintBelow))
+		nodeIdx = append(nodeIdx, -1)
 	}
-	return lines
+	return lines, nodeIdx
+}
+
+// NodeAtRow maps a content-area row (0-based, excluding the top border) to the
+// node index rendered there, or -1 for a scroll hint, separator, or out-of-range
+// row. width/height are the same dimensions passed to Render, so the viewport
+// math matches the rendered frame exactly.
+func (s SidebarModel) NodeAtRow(width, height, contentRow int) int {
+	if contentRow < 0 || len(s.nodes) == 0 {
+		return -1
+	}
+	visibleRows := height - 2
+	if visibleRows < 1 {
+		visibleRows = 1
+	}
+	heightFn := func(i int, isLast bool) int { return s.nodeHeight(i, isLast) }
+	offset, contentRows, hasAbove, hasBelow := sidebarViewport(s.cursor, s.offset, visibleRows, len(s.nodes), heightFn)
+	noHint := func(string) string { return "" }
+	_, nodeIdx := s.buildSidebarLines(offset, contentRows, hasAbove, hasBelow, false, width, noHint)
+	if contentRow >= len(nodeIdx) {
+		return -1
+	}
+	return nodeIdx[contentRow]
+}
+
+// SetCursorIndex moves the cursor to node index i (no-op when out of range) and
+// keeps the viewport clamped so the selection stays visible.
+func (s *SidebarModel) SetCursorIndex(i, visibleRows int) {
+	if i < 0 || i >= len(s.nodes) {
+		return
+	}
+	s.cursor = i
+	s.clampViewport(visibleRows)
 }
 
 func (s SidebarModel) Render(width, height int, focused bool, title, rightTitle string) string {
@@ -638,7 +682,7 @@ func (s SidebarModel) Render(width, height int, focused bool, title, rightTitle 
 	if len(s.nodes) == 0 {
 		lines = append(lines, centeredHint(s.emptyHintText()))
 	} else {
-		lines = s.buildSidebarLines(offset, contentRows, hasAbove, hasBelow, focused, width, centeredHint)
+		lines, _ = s.buildSidebarLines(offset, contentRows, hasAbove, hasBelow, focused, width, centeredHint)
 	}
 
 	inner := strings.Join(lines, "\n")
